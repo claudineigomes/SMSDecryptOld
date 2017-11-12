@@ -1,8 +1,10 @@
 package com.tcc.smsdecrypt;
 
+import android.os.StrictMode;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 
+import android.util.Base64;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
@@ -18,7 +20,18 @@ import android.telephony.SmsManager;
 
 import android.widget.EditText;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.Authenticator;
+import java.net.HttpURLConnection;
+import java.net.PasswordAuthentication;
+import java.net.URL;
 import java.util.ArrayList;
 
 
@@ -84,7 +97,50 @@ public class SmsSend extends AppCompatActivity {
     }
 
     protected void sendSMSMessage() {
-        SmsManager smsManager = SmsManager.getDefault();
+
+        Authenticator.setDefault(new Authenticator(){
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication("myuser","mypass".toCharArray());
+            }});
+
+        if (android.os.Build.VERSION.SDK_INT > 9) {
+            StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+            StrictMode.setThreadPolicy(policy);
+        }
+
+        HttpURLConnection c = null;
+
+        try {
+            c = (HttpURLConnection) new URL("http://192.168.254.4:9200/chaves?celular=5531994429981").openConnection();
+            final String basicAuth = "Basic " + Base64.encodeToString("admin@algamoney.com:admin".getBytes(), Base64.NO_WRAP);
+            c.setRequestProperty ("Authorization", basicAuth);
+            c.setUseCaches(false);
+            System.out.println("PRINTANDO");
+            System.out.println(c.getResponseCode());
+
+            BufferedReader in = new BufferedReader(
+                    new InputStreamReader(c.getInputStream()));
+            String inputLine;
+            StringBuffer response = new StringBuffer();
+
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+
+            System.out.println("Response : -- " + response.toString());
+            JSONObject jsonObject = new JSONObject(response.toString());
+            System.out.println(jsonObject);
+            new EncriptaDecriptaRSA().stringToPublicKey(jsonObject.getJSONArray("content").getJSONObject(0).getString("chavePublica"));
+
+            System.out.println("FIM");
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+
         String mensagemCriptografada = "";
         try {
             message = txtMessage.getText().toString();
@@ -97,6 +153,8 @@ public class SmsSend extends AppCompatActivity {
         }
 /*
         String a = mensagemCriptografada.substring(0, 150);*/
+
+
 
         SmsManager sms = SmsManager.getDefault();
         ArrayList<String> parts = sms.divideMessage(mensagemCriptografada);

@@ -6,8 +6,11 @@ package com.tcc.smsdecrypt;
 
 import android.content.Context;
 import android.os.Environment;
+import android.os.StrictMode;
 import android.support.v7.app.AppCompatActivity;
+import android.telephony.TelephonyManager;
 import android.util.Base64;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -16,6 +19,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -49,7 +57,7 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
      * Gera a chave que contém um par de chave Privada e Pública usando 1025 bytes.
      * Armazena o conjunto de chaves nos arquivos private.key e public.key
      */
-    public void geraChave() {
+    public void geraChave(Context context) {
         try {
             final KeyPairGenerator keyGen = KeyPairGenerator.getInstance(ALGORITHM);
             keyGen.initialize(1024);
@@ -84,7 +92,7 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
             chavePrivadaOS.writeObject(key.getPrivate());
             chavePrivadaOS.close();
 
-            enviarChavesParaServidor(chavePublica);
+            enviarChavesParaServidor(chavePublica, context);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -96,7 +104,7 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
         String keyAsString = Base64.encodeToString(publicKey.getEncoded(), Base64.DEFAULT);
         // ....
         ///
-
+        keyAsString = keyAsString.replaceAll("\n", "");
         // When you need your bytes back you call the decoder on the string.
         byte[] keyBytes = Base64.decode(keyAsString, Base64.DEFAULT);
 
@@ -117,7 +125,7 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
 
     }
 
-    private void enviarChavesParaServidor(PublicKey chavePublicaNaMemoria) {
+    private void enviarChavesParaServidor(PublicKey chavePublicaNaMemoria, Context context) {
 
         ObjectInputStream inputStream = null;
         try {
@@ -135,6 +143,54 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
 
         System.out.println(chavePublicaNaMemoria.equals(a));
 
+        try{
+            HttpURLConnection c = null;
+
+            c = (HttpURLConnection) new URL("http://186.248.79.46:9200/chaves").openConnection();
+            final String basicAuth = "Basic " + Base64.encodeToString("admin@algamoney.com:admin".getBytes(), Base64.NO_WRAP);
+            final String oAuth = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX25hbWUiOiJhZG1pbkBhbGdhbW9uZXkuY29tIiwic2NvcGUiOlsicmVhZCIsIndyaXRlIl0sIm5vbWUiOiJBZG1pbmlzdHJhZG9yIiwiZXhwIjoxNTA1OTA3OTI3LCJhdXRob3JpdGllcyI6WyJST0xFX0NBREFTVFJBUl9DQVRFR09SSUEiLCJST0xFX1BFU1FVSVNBUl9QRVNTT0EiLCJST0xFX1JFTU9WRVJfUEVTU09BIiwiUk9MRV9DQURBU1RSQVJfTEFOQ0FNRU5UTyIsIlJPTEVfUEVTUVVJU0FSX0xBTkNBTUVOVE8iLCJST0xFX1JFTU9WRVJfTEFOQ0FNRU5UTyIsIlJPTEVfQ0FEQVNUUkFSX1BFU1NPQSIsIlJPTEVfUEVTUVVJU0FSX0NBVEVHT1JJQSJdLCJqdGkiOiI0OTNlODkyZC04ZjVlLTRkN2EtYjg3ZC00NGI3NzM5YzMzNTUiLCJjbGllbnRfaWQiOiJhbmd1bGFyIn0.JzqfKfbFZaj5yuJ-pCkTDZXItHfPFanXetDmjXucqWU";
+
+            c.setRequestProperty ("Authorization", oAuth);
+
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(5000);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setDoOutput(true);
+            c.setDoInput(true);
+
+            if (android.os.Build.VERSION.SDK_INT > 9) {
+                StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+                StrictMode.setThreadPolicy(policy);
+            }
+
+
+            System.out.println("ENVIANDO");
+            System.out.println(publicKeyToString(chavePublicaNaMemoria));
+            System.out.println("FIM");
+            String json = "{\n" +
+                    "\t\"celular\": \"+553199442121239981\",\n" +
+                    "\t\"chavePublica\": \"" + publicKeyToString(chavePublicaNaMemoria) + "\",\n" +
+                    "\t\"pessoa\": {\n" +
+                    "\t\t\"codigo\": 1\n" +
+                    "\t}\n" +
+                    "}";
+
+
+            OutputStream os = c.getOutputStream();
+            os.write(json.getBytes("UTF-8"));
+            os.close();
+
+            c.getInputStream();
+
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
     }
 
 
@@ -147,7 +203,7 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
             chavePrivada.delete();
             chavePublica.delete();
 
-            geraChave();
+            geraChave(context);
         }
     }
 
@@ -179,7 +235,7 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
             final Cipher cipher = Cipher.getInstance(ALGORITHM);
             // Criptografa o texto puro usando a chave Púlica
             cipher.init(Cipher.ENCRYPT_MODE, chave);
-            System.out.println(texto);
+//            System.out.println(texto);
             cipherText = cipher.doFinal(texto.getBytes());
         } catch (Exception e) {
             e.printStackTrace();
@@ -212,7 +268,7 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
         if (!verificaSeExisteChavesNoSO(context)) {
             // Método responsável por gerar um par de chaves usando o algoritmo RSA e
             // armazena as chaves nos seus respectivos arquivos.
-                geraChave();
+                geraChave(context);
         }
     }
 
@@ -224,10 +280,10 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
         final byte[] textoCriptografado = criptografa(msgOriginal, chavePublica);
 
         String decoded = new String(textoCriptografado, "ISO-8859-1");
-        System.out.println("decoded:" + decoded);
+//        System.out.println("decoded:" + decoded);
 
         byte[] encoded = decoded.getBytes("ISO-8859-1");
-        System.out.println("encoded:" + java.util.Arrays.toString(encoded));
+//        System.out.println("encoded:" + java.util.Arrays.toString(encoded));
 
         String[] a = java.util.Arrays.toString(encoded).split(",");
 
@@ -247,11 +303,9 @@ public class EncriptaDecriptaRSA extends AppCompatActivity{
         String[] texto = mensagem.split(",");
         byte[] arrayParaDecript = new byte[texto.length];
         for(int k = 0; k < texto.length; k++){
-            System.out.println(texto[k]);
             String aa = texto[k].replaceAll(" ", "");
             aa = aa.replaceAll("\\[", "");
             aa = aa.replaceAll("\\]", "");
-            System.out.println(aa);
 
             arrayParaDecript[k] = Byte.parseByte(aa);
 
